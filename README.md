@@ -57,7 +57,7 @@ modbus_pulse:
       command_on: 1
       command_off: 0
       write_type: coil
-      scan_interval: 1
+      scan_interval: 5
       pulse: true
       verify:
         input_type: coil
@@ -81,7 +81,7 @@ modbus_pulse:
       command_on: 1
       command_off: 0
       write_type: coil
-      scan_interval: 1
+      scan_interval: 5
       pulse: true
       verify:
         input_type: coil
