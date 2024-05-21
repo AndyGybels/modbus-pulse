@@ -1,0 +1,12 @@
+{
+  "domain": "modbus_pulse",
+  "name": "Modbus Pulse",
+  "dependencies": [],
+  "documentation": "https://github.com/AndyGybels/modbus-pulse",
+  "issue_tracker": "https://github.com/AndyGybels/modbus-pulse/issues",
+  "requirements": [
+    "pymodbus==3.6.8"
+  ],
+  "version": "0.1.2",
+  "iot_class": "assumed_state"
+}
