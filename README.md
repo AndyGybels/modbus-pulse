@@ -1,4 +1,5 @@
 
+
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
 # Home Assistant integration modbus pulse
@@ -33,6 +34,19 @@ Usefull for controlling for example relay switches.
 modbus_pulse is configured in the `configuration.yaml` file under the *modbus_pulse* domain.
 Configuration is the same as the integrated modbus integration so see the modbus integration documentation for more information:
 https://www.home-assistant.io/integrations/modbus/
+
+Additional parameters:
+
+    pulse:
+      description: "Send a pulse instead of an on or off command, the pulse wil first send the on command and after the pulse delay value it wil subsequently send the off command."
+      required: false
+      default: false
+      type: boolean
+    pulse_delay:
+      description: "The delay value in milliseconds when using pulse."
+      required: false
+      default: 50
+      type: integer
 
 Example Siemens Logo 8.3 PLC program:
 
