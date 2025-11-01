@@ -4,9 +4,7 @@
   "dependencies": [],
   "documentation": "https://github.com/AndyGybels/modbus-pulse",
   "issue_tracker": "https://github.com/AndyGybels/modbus-pulse/issues",
-  "requirements": [
-    "pymodbus==3.6.8"
-  ],
-  "version": "0.1.2",
+  "requirements": ["pymodbus==3.11.2"],
+  "version": "0.2.0",
   "iot_class": "assumed_state"
 }
