@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 from . import get_hub
-from .base_platform import BaseSwitch
+from .entity import ModbusToggleEntity
 from .const import CONF_FANS
 from .modbus import ModbusHub
 
@@ -35,7 +35,7 @@ async def async_setup_platform(
     async_add_entities(fans)
 
 
-class ModbusFan(BaseSwitch, FanEntity):
+class ModbusFan(ModbusToggleEntity, FanEntity):
     """Class representing a Modbus fan."""
 
     async def async_turn_on(

@@ -24,7 +24,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from . import get_hub
-from .base_platform import BasePlatform
+from .entity import ModbusBaseEntity
 from .const import (
     CALL_TYPE_COIL,
     CALL_TYPE_DISCRETE,
@@ -62,7 +62,7 @@ async def async_setup_platform(
     async_add_entities(sensors)
 
 
-class ModbusBinarySensor(BasePlatform, RestoreEntity, BinarySensorEntity):
+class ModbusBinarySensor(ModbusBaseEntity, RestoreEntity, BinarySensorEntity):
     """Modbus binary sensor."""
 
     def __init__(
@@ -103,17 +103,12 @@ class ModbusBinarySensor(BasePlatform, RestoreEntity, BinarySensorEntity):
         if state := await self.async_get_last_state():
             self._attr_is_on = state.state == STATE_ON
 
-    async def async_update(self, now: datetime | None = None) -> None:
+    async def _async_update(self) -> None:
         """Update the state of the sensor."""
 
-        # do not allow multiple active calls to the same platform
-        if self._call_active:
-            return
-        self._call_active = True
         result = await self._hub.async_pb_call(
-            self._slave, self._address, self._count, self._input_type
+            self._device_address, self._address, self._count, self._input_type
         )
-        self._call_active = False
         if result is None:
             self._attr_available = False
             self._result = []
