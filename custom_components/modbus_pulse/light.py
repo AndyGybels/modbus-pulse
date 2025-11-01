@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 from . import get_hub
-from .base_platform import BaseSwitch
+from .entity import ModbusToggleEntity
 from .modbus import ModbusHub
 
 PARALLEL_UPDATES = 1
@@ -34,7 +34,7 @@ async def async_setup_platform(
     async_add_entities(lights)
 
 
-class ModbusLight(BaseSwitch, LightEntity):
+class ModbusLight(ModbusToggleEntity, LightEntity):
     """Class representing a Modbus light."""
 
     _attr_color_mode = ColorMode.ONOFF
