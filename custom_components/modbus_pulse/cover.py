@@ -2,27 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
-from homeassistant.components.cover import CoverEntity, CoverEntityFeature
-from homeassistant.const import (
-    CONF_COVERS,
-    CONF_NAME,
-    STATE_CLOSED,
-    STATE_CLOSING,
-    STATE_OPEN,
-    STATE_OPENING,
-    STATE_UNAVAILABLE,
-    STATE_UNKNOWN,
-)
+from homeassistant.components.cover import CoverEntity, CoverEntityFeature, CoverState
+from homeassistant.const import CONF_COVERS, CONF_NAME, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 from . import get_hub
-from .entity import ModbusBaseEntity
 from .const import (
     CALL_TYPE_COIL,
     CALL_TYPE_WRITE_COIL,
@@ -34,6 +23,7 @@ from .const import (
     CONF_STATUS_REGISTER,
     CONF_STATUS_REGISTER_TYPE,
 )
+from .entity import ModbusBaseEntity
 from .modbus import ModbusHub
 
 PARALLEL_UPDATES = 1
@@ -46,15 +36,10 @@ async def async_setup_platform(
     discovery_info: DiscoveryInfoType | None = None,
 ) -> None:
     """Read configuration and create Modbus cover."""
-    if discovery_info is None:
+    if discovery_info is None or not (covers := discovery_info[CONF_COVERS]):
         return
-
-    covers = []
-    for cover in discovery_info[CONF_COVERS]:
-        hub: ModbusHub = get_hub(hass, discovery_info[CONF_NAME])
-        covers.append(ModbusCover(hass, hub, cover))
-
-    async_add_entities(covers)
+    hub = get_hub(hass, discovery_info[CONF_NAME])
+    async_add_entities(ModbusCover(hass, hub, config) for config in covers)
 
 
 class ModbusCover(ModbusBaseEntity, CoverEntity, RestoreEntity):
@@ -105,10 +90,10 @@ class ModbusCover(ModbusBaseEntity, CoverEntity, RestoreEntity):
         await self.async_base_added_to_hass()
         if state := await self.async_get_last_state():
             convert = {
-                STATE_CLOSED: self._state_closed,
-                STATE_CLOSING: self._state_closing,
-                STATE_OPENING: self._state_opening,
-                STATE_OPEN: self._state_open,
+                CoverState.CLOSED: self._state_closed,
+                CoverState.CLOSING: self._state_closing,
+                CoverState.OPENING: self._state_opening,
+                CoverState.OPEN: self._state_open,
                 STATE_UNAVAILABLE: None,
                 STATE_UNKNOWN: None,
             }
@@ -123,18 +108,24 @@ class ModbusCover(ModbusBaseEntity, CoverEntity, RestoreEntity):
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open cover."""
         result = await self._hub.async_pb_call(
-            self._device_address, self._write_address, self._state_open, self._write_type
+            self._device_address,
+            self._write_address,
+            self._state_open,
+            self._write_type,
         )
         self._attr_available = result is not None
-        await self.async_update()
+        await self.async_local_update(cancel_pending_update=True)
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         """Close cover."""
         result = await self._hub.async_pb_call(
-            self._device_address, self._write_address, self._state_closed, self._write_type
+            self._device_address,
+            self._write_address,
+            self._state_closed,
+            self._write_type,
         )
         self._attr_available = result is not None
-        await self.async_update()
+        await self.async_local_update(cancel_pending_update=True)
 
     async def _async_update(self) -> None:
         """Update the state of the cover."""
@@ -149,4 +140,3 @@ class ModbusCover(ModbusBaseEntity, CoverEntity, RestoreEntity):
             self._set_attr_state(bool(result.bits[0] & 1))
         else:
             self._set_attr_state(int(result.registers[0]))
-        self.async_write_ha_state()

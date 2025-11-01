@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-import logging
 from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
@@ -24,16 +22,15 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from . import get_hub
-from .entity import ModbusBaseEntity
 from .const import (
+    _LOGGER,
     CALL_TYPE_COIL,
     CALL_TYPE_DISCRETE,
     CONF_SLAVE_COUNT,
     CONF_VIRTUAL_COUNT,
 )
+from .entity import ModbusBaseEntity
 from .modbus import ModbusHub
-
-_LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 1
 
@@ -90,6 +87,7 @@ class ModbusBinarySensor(ModbusBaseEntity, RestoreEntity, BinarySensorEntity):
         self._coordinator = DataUpdateCoordinator(
             hass,
             _LOGGER,
+            config_entry=None,
             name=name,
         )
 
@@ -106,6 +104,7 @@ class ModbusBinarySensor(ModbusBaseEntity, RestoreEntity, BinarySensorEntity):
     async def _async_update(self) -> None:
         """Update the state of the sensor."""
 
+        # do not allow multiple active calls to the same platform
         result = await self._hub.async_pb_call(
             self._device_address, self._address, self._count, self._input_type
         )
@@ -115,12 +114,11 @@ class ModbusBinarySensor(ModbusBaseEntity, RestoreEntity, BinarySensorEntity):
         else:
             self._attr_available = True
             if self._input_type in (CALL_TYPE_COIL, CALL_TYPE_DISCRETE):
-                self._result = result.bits
+                self._result = [int(bit) for bit in result.bits]
             else:
                 self._result = result.registers
             self._attr_is_on = bool(self._result[0] & 1)
 
-        self.async_write_ha_state()
         if self._coordinator:
             self._coordinator.async_set_updated_data(self._result)
 
@@ -153,12 +151,14 @@ class SlaveSensor(
         """Handle entity which will be added."""
         if state := await self.async_get_last_state():
             self._attr_is_on = state.state == STATE_ON
-            self.async_write_ha_state()
         await super().async_added_to_hass()
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         result = self.coordinator.data
-        self._attr_is_on = bool(result[self._result_inx] & 1) if result else None
+        if not result or self._result_inx >= len(result):
+            self._attr_is_on = None
+        else:
+            self._attr_is_on = bool(result[self._result_inx] & 1)
         super()._handle_coordinator_update()
