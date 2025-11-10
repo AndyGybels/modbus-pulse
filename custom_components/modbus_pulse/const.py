@@ -162,7 +162,7 @@ DEFAULT_TEMP_UNIT = "C"
 DEFAULT_HVAC_ON_VALUE = 1
 DEFAULT_HVAC_OFF_VALUE = 0
 MODBUS_DOMAIN = "modbus"
-DOMAIN = "modbus"
+DOMAIN = "modbus_pulse"
 
 ACTIVE_SCAN_INTERVAL = 2  # limit to force an extra update
 
