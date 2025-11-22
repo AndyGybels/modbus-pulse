@@ -264,13 +264,22 @@ class ModbusStructEntity(ModbusBaseEntity, RestoreEntity):
         # Apply scale, precision, limits to floats and ints
         return self.__process_raw_value(val[0])
 
-
 class ModbusToggleEntity(ModbusBaseEntity, ToggleEntity, RestoreEntity):
+    """
+    Pulse-safe Modbus toggle entity (switch/light unified).
+    - ON sends clean 1→0 pulse
+    - OFF also sends 1→0 pulse (for LOGO NI toggles)
+    - Lights and switches both inherit safely
+    - _command_off is optional (lights may not have it)
+    """
+
     def __init__(self, hass: HomeAssistant, hub: ModbusHub, config: dict) -> None:
         config[CONF_INPUT_TYPE] = ""
         super().__init__(hass, hub, config)
 
         self._attr_is_on = False
+
+        # write type conversion
         convert = {
             CALL_TYPE_REGISTER_HOLDING: (
                 CALL_TYPE_REGISTER_HOLDING,
@@ -292,245 +301,156 @@ class ModbusToggleEntity(ModbusBaseEntity, ToggleEntity, RestoreEntity):
             ),
         }
         self._write_type = convert[config[CONF_WRITE_TYPE]][1]
-        self.command_on = config[CONF_COMMAND_ON]
-        self._command_off = config[CONF_COMMAND_OFF]
 
-        # verify support
-        if CONF_VERIFY in config:
-            v = config[CONF_VERIFY] or {}
-            self._verify_active = True
-            self._verify_delay = v.get(CONF_DELAY, 0)
-            self._verify_address = v.get(CONF_ADDRESS, config[CONF_ADDRESS])
-            self._verify_type = convert[v.get(CONF_INPUT_TYPE, config[CONF_WRITE_TYPE])][0]
-            self._state_on = v.get(CONF_STATE_ON, [self.command_on])
-            self._state_off = v.get(CONF_STATE_OFF, [self._command_off])
-        else:
-            self._verify_active = False
+        # Commands
+        self.command_on = config.get(CONF_COMMAND_ON, 1)
+        self._command_off = config.get(CONF_COMMAND_OFF, 0)
+
+        # Pulse settings
         self._pulse = config.get(CONF_PULSE, False)
         self._pulse_delay = config.get(CONF_PULSE_DELAY, 0) / 1000
 
-    async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn the switch ON (pulse or steady)."""
-        if self._pulse:
-            await self._async_send_pulse()
-        else:
-            await self._async_send_command(self.command_on)
-
-    async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn OFF – in pulse mode, OFF does the same as ON."""
-        if self._pulse:
-            await self._async_send_pulse()
-        else:
-            await self._async_send_command(self._command_off)
-
-    async def _async_send_pulse(self) -> None:
-        # Send ON
-        result = await self._hub.async_pb_call(
-            self._device_address, self._address, self.command_on, self._write_type
-        )
-        if result is None:
-            self._attr_available = False
-            self.async_write_ha_state()
-            return
-
-        self._attr_available = True
-        self._attr_is_on = True
-        self.async_write_ha_state()
-
-        # Schedule OFF
-        async def _end_pulse(_now):
-            await self._hub.async_pb_call(
-                self._device_address, self._address, self._command_off, self._write_type
-            )
-            self._attr_is_on = False
-            self.async_write_ha_state()
-
-        async_call_later(self.hass, self._pulse_delay, _end_pulse)
-
-    async def _async_send_command(self, command: int) -> None:
-        """Standard non-pulse Modbus write."""
-        result = await self._hub.async_pb_call(
-            self._device_address, self._address, command, self._write_type
-        )
-        if result is None:
-            self._attr_available = False
-            self.async_write_ha_state()
-            return
-
-        self._attr_available = True
-
-        if not self._verify_active:
-            self._attr_is_on = command == self.command_on
-            self.async_write_ha_state()
-            return
-
-        # verification logic
-        if self._verify_delay:
-            if self._cancel_call:
-                self._cancel_call()
-            self._cancel_call = async_call_later(
-                self.hass, self._verify_delay, self.async_update
-            )
-        else:
-            await self.async_local_update(cancel_pending_update=True)
-
-    async def _async_update(self) -> None:
-        """Verification read."""
-        if not self._verify_active:
-            self._attr_available = True
-            return
-
-        result = await self._hub.async_pb_call(
-            self._device_address, self._verify_address, 1, self._verify_type
-        )
-        if result is None:
-            self._attr_available = False
-            return
-
-        self._attr_available = True
-
-        if self._verify_type in (CALL_TYPE_COIL, CALL_TYPE_DISCRETE):
-            self._attr_is_on = bool(result.bits[0] & 1)
-        else:
-            value = int(result.registers[0])
-            self._attr_is_on = value in self._state_on
-
-    """Base class representing a Modbus switch."""
-
-    def __init__(self, hass: HomeAssistant, hub: ModbusHub, config: dict) -> None:
-        """Initialize the switch."""
-        config[CONF_INPUT_TYPE] = ""
-        super().__init__(hass, hub, config)
-        self._attr_is_on = False
-        convert = {
-            CALL_TYPE_REGISTER_HOLDING: (
-                CALL_TYPE_REGISTER_HOLDING,
-                CALL_TYPE_WRITE_REGISTER,
-            ),
-            CALL_TYPE_DISCRETE: (
-                CALL_TYPE_DISCRETE,
-                None,
-            ),
-            CALL_TYPE_REGISTER_INPUT: (
-                CALL_TYPE_REGISTER_INPUT,
-                None,
-            ),
-            CALL_TYPE_COIL: (CALL_TYPE_COIL, CALL_TYPE_WRITE_COIL),
-            CALL_TYPE_X_COILS: (CALL_TYPE_COIL, CALL_TYPE_WRITE_COILS),
-            CALL_TYPE_X_REGISTER_HOLDINGS: (
-                CALL_TYPE_REGISTER_HOLDING,
-                CALL_TYPE_WRITE_REGISTERS,
-            ),
-        }
-        self._write_type = cast(str, convert[config[CONF_WRITE_TYPE]][1])
-        self.command_on = config[CONF_COMMAND_ON]
-        self._command_off = config[CONF_COMMAND_OFF]
+        # Verification settings
         if CONF_VERIFY in config:
-            if config[CONF_VERIFY] is None:
-                config[CONF_VERIFY] = {}
+            verify = config[CONF_VERIFY] or {}
             self._verify_active = True
-            self._verify_delay = config[CONF_VERIFY].get(CONF_DELAY, 0)
-            self._verify_address = config[CONF_VERIFY].get(
-                CONF_ADDRESS, config[CONF_ADDRESS]
-            )
+            self._verify_delay = verify.get(CONF_DELAY, 0)
+            self._verify_address = verify.get(CONF_ADDRESS, config[CONF_ADDRESS])
             self._verify_type = convert[
-                config[CONF_VERIFY].get(CONF_INPUT_TYPE, config[CONF_WRITE_TYPE])
+                verify.get(CONF_INPUT_TYPE, config[CONF_WRITE_TYPE])
             ][0]
-            self._state_on = config[CONF_VERIFY].get(CONF_STATE_ON, [self.command_on])
-            self._state_off = config[CONF_VERIFY].get(
-                CONF_STATE_OFF, [self._command_off]
-            )
+            self._state_on = verify.get(CONF_STATE_ON, 1)
+            self._state_off = verify.get(CONF_STATE_OFF, 0)
         else:
             self._verify_active = False
-        if CONF_PULSE in config:
-            self._pulse = config[CONF_PULSE]
-            self._pulse_delay = config[CONF_PULSE_DELAY] / 1000
+
+    #
+    # SAFE OFF VALUE FOR LIGHTS (they may not define _command_off)
+    #
+    def _off_value(self) -> int:
+        return getattr(self, "_command_off", 0)
 
     async def async_added_to_hass(self) -> None:
-        """Handle entity which will be added."""
         await self.async_base_added_to_hass()
         if state := await self.async_get_last_state():
-            if state.state == STATE_ON:
-                self._attr_is_on = True
-            elif state.state == STATE_OFF:
-                self._attr_is_on = False
-        await super().async_added_to_hass()
+            self._attr_is_on = (state.state == STATE_ON)
 
-    async def async_turn(self, command: int) -> None:
-        """Evaluate switch result."""
-        result = await self._hub.async_pb_call(
-            self._device_address, self._address, command, self._write_type
+    #
+    # --------------------- CLEAN PULSE LOGIC ---------------------
+    #
+    async def _do_pulse(self) -> None:
+        """
+        Send a 1→0 pulse to the configured Modbus coil.
+        Used for both ON and OFF because LOGO toggles on rising edges.
+        """
+        # Rising edge
+        await self._hub.async_pb_call(
+            self._device_address,
+            self._address,
+            self.command_on,
+            self._write_type,
         )
-        if result is None:
-            self._attr_available = False
-            self.async_write_ha_state()
-            return
 
-        self._attr_available = True
-
-        if self._pulse:
-            async_call_later(self.hass, self._pulse_delay, self.async_modbus_off)
-
-        if not self._verify_active:
-            self._attr_is_on = command == self.command_on
-            self.async_write_ha_state()
-            return
-
-        if self._verify_delay:
-            if self._cancel_call:
-                self._cancel_call()
-                self._cancel_call = None
-            self._cancel_call = async_call_later(
-                self.hass, self._verify_delay, self.async_update
+        async def _finish(_now):
+            # Falling edge
+            await self._hub.async_pb_call(
+                self._device_address,
+                self._address,
+                self._off_value(),
+                self._write_type,
             )
+
+            if self._verify_active:
+                await self.async_update()
+            else:
+                await self.async_local_update(cancel_pending_update=True)
+
+        async_call_later(self.hass, self._pulse_delay, _finish)
+
+    #
+    # ---------------------- PUBLIC ACTIONS -----------------------
+    #
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        if self._pulse:
+            await self._do_pulse()
             return
-        await self.async_local_update(cancel_pending_update=True)
+
+        await self._write_direct(self.command_on)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Set switch off."""
         if self._pulse:
-            await self.async_turn(self.command_on)
-            async_call_later(self.hass, self._pulse_delay, self.async_modbus_off)
-            return
-        await self.async_turn(self._command_off)
-
-    async def async_modbus_off(self, now: datetime | None = None) -> None:
-        """Send command off to modbus address on pulse."""
-        # remark "now" is a dummy parameter to avoid problems with
-        await self._hub.async_pb_call(
-            self._device_address, self._address, self._command_off, self._write_type
-        )
-
-    async def _async_update(self) -> None:
-        """Update the entity state."""
-        if not self._verify_active:
-            self._attr_available = True
+            # LOGO toggles → pulse even for OFF
+            await self._do_pulse()
             return
 
-        # do not allow multiple active calls to the same platform
+        await self._write_direct(self._off_value())
+
+    #
+    # --------------- COMPATIBILITY WITH ModbusLight ---------------
+    #
+    async def async_turn(self, command: int) -> None:
+        """
+        Lights call async_turn(command) instead of async_turn_on/off.
+        Ensure pulse handling works the same.
+        """
+        if self._pulse:
+            await self._do_pulse()
+            return
+
+        await self._write_direct(command)
+
+    #
+    # ---------------- DIRECT WRITE (NON-PULSE) --------------------
+    #
+    async def _write_direct(self, value: int) -> None:
         result = await self._hub.async_pb_call(
-            self._device_address, self._verify_address, 1, self._verify_type
+            self._device_address,
+            self._address,
+            value,
+            self._write_type,
         )
         if result is None:
             self._attr_available = False
+            self.async_write_ha_state()
             return
 
         self._attr_available = True
+
+        if not self._verify_active:
+            self._attr_is_on = (value == self.command_on)
+            self.async_write_ha_state()
+            return
+
+        # verify after delay or immediately
+        if self._verify_delay:
+            async_call_later(self.hass, self._verify_delay, self.async_update)
+        else:
+            await self.async_update()
+
+    #
+    # ------------------------ VERIFICATION -------------------------
+    #
+    async def async_update(self, _now: datetime | None = None) -> None:
+        if not self._verify_active:
+            return
+
+        result = await self._hub.async_pb_call(
+            self._device_address,
+            self._verify_address,
+            1,
+            self._verify_type,
+        )
+        if result is None:
+            self._attr_available = False
+            self.async_write_ha_state()
+            return
+
+        self._attr_available = True
+
         if self._verify_type in (CALL_TYPE_COIL, CALL_TYPE_DISCRETE):
             self._attr_is_on = bool(result.bits[0] & 1)
         else:
-            value = int(result.registers[0])
-            if value in self._state_on:
-                self._attr_is_on = True
-            elif value in self._state_off:
-                self._attr_is_on = False
-            elif value is not None:
-                _LOGGER.error(
-                    (
-                        "Unexpected response from modbus device slave %s register %s,"
-                        " got 0x%2x"
-                    ),
-                    self._device_address,
-                    self._verify_address,
-                    value,
-                )
+            val = int(result.registers[0])
+            self._attr_is_on = (val == self._state_on)
+
+        self.async_write_ha_state()
