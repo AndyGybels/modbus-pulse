@@ -27,7 +27,8 @@ from homeassistant.const import (
     CONF_TYPE,
     EVENT_HOMEASSISTANT_STOP,
 )
-from homeassistant.core import Event, HomeAssistant, ServiceCall
+from homeassistant.core import Event, HomeAssistant, ServiceCall, SupportsResponse
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.discovery import async_load_platform
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -60,6 +61,7 @@ from .const import (
     PLATFORMS,
     RTUOVERTCP,
     SERIAL,
+    SERVICE_READ_COIL,
     SERVICE_STOP,
     SERVICE_WRITE_COIL,
     SERVICE_WRITE_REGISTER,
@@ -206,6 +208,36 @@ async def async_modbus_setup(
             await hub.async_pb_call(
                 device_address, address, state, CALL_TYPE_WRITE_COIL
             )
+
+    async def async_read_coil(service: ServiceCall) -> dict[str, Any]:
+        """Read Modbus coil."""
+        hub, device_address, address = _get_service_call_details(service)
+        count = service.data.get("count", 1)
+        result = await hub.async_pb_call(
+            device_address, address, count, CALL_TYPE_COIL
+        )
+        if result is None:
+            raise HomeAssistantError(
+                f"Failed to read coil address {address} from hub {hub.name}"
+            )
+        bits = result.bits[:count]
+        return {"result": [bool(b) for b in bits]}
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_READ_COIL,
+        async_read_coil,
+        schema=vol.Schema(
+            {
+                vol.Optional(ATTR_HUB, default=DEFAULT_HUB): cv.string,
+                vol.Exclusive(ATTR_SLAVE, "unit"): cv.positive_int,
+                vol.Exclusive(ATTR_UNIT, "unit"): cv.positive_int,
+                vol.Required(ATTR_ADDRESS): cv.positive_int,
+                vol.Optional("count", default=1): cv.positive_int,
+            }
+        ),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
 
     for x_write in (
         (SERVICE_WRITE_REGISTER, async_write_register, ATTR_VALUE, cv.positive_int),

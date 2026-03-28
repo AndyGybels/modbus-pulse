@@ -4,6 +4,28 @@
       "name": "[%key:common::action::reload%]",
       "description": "Reloads all Modbus entities."
     },
+    "read_coil": {
+      "name": "Read coil",
+      "description": "Reads Modbus coil(s) and returns their state.",
+      "fields": {
+        "address": {
+          "name": "Address",
+          "description": "Address of the coil to read."
+        },
+        "count": {
+          "name": "Count",
+          "description": "Number of coils to read."
+        },
+        "slave": {
+          "name": "Server",
+          "description": "Address of the Modbus unit/server."
+        },
+        "hub": {
+          "name": "Hub",
+          "description": "Modbus hub name."
+        }
+      }
+    },
     "write_coil": {
       "name": "Write coil",
       "description": "Writes to a Modbus coil.",

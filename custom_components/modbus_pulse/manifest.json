@@ -5,6 +5,6 @@
   "documentation": "https://github.com/AndyGybels/modbus-pulse",
   "issue_tracker": "https://github.com/AndyGybels/modbus-pulse/issues",
   "requirements": ["pymodbus==3.11.2"],
-  "version": "0.2.3",
+  "version": "0.2.4",
   "iot_class": "assumed_state"
 }

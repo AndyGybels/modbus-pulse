@@ -144,6 +144,7 @@ CALL_TYPE_X_COILS = "coils"
 CALL_TYPE_X_REGISTER_HOLDINGS = "holdings"
 
 # service calls
+SERVICE_READ_COIL = "read_coil"
 SERVICE_WRITE_COIL = "write_coil"
 SERVICE_WRITE_REGISTER = "write_register"
 SERVICE_STOP = "stop"
