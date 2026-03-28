@@ -330,6 +330,25 @@ class ModbusToggleEntity(ModbusBaseEntity, ToggleEntity, RestoreEntity):
     def _off_value(self) -> int:
         return getattr(self, "_command_off", 0)
 
+    async def _async_update(self) -> None:
+        """Implement abstract method required by ModbusBaseEntity."""
+        if self._verify_active:
+            result = await self._hub.async_pb_call(
+                self._device_address,
+                self._verify_address,
+                1,
+                self._verify_type,
+            )
+            if result is None:
+                self._attr_available = False
+                return
+            self._attr_available = True
+            if self._verify_type in (CALL_TYPE_COIL, CALL_TYPE_DISCRETE):
+                self._attr_is_on = bool(result.bits[0] & 1)
+            else:
+                val = int(result.registers[0])
+                self._attr_is_on = (val == self._state_on)
+
     async def async_added_to_hass(self) -> None:
         await self.async_base_added_to_hass()
         if state := await self.async_get_last_state():
