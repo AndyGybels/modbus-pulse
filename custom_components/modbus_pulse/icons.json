@@ -3,6 +3,9 @@
     "reload": {
       "service": "mdi:reload"
     },
+    "read_coil": {
+      "service": "mdi:eye"
+    },
     "write_coil": {
       "service": "mdi:pencil"
     },
